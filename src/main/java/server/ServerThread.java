@@ -36,6 +36,8 @@ public class ServerThread extends Thread {
             sendMessage("SERVER", "Your username is " + username + ". You can change it with /username [new_name]");
             sendMessage("SERVER", "Type /help for a list of commands");
             
+            // Join lobby automatically
+            server.getLobby().addClient(this);
             
             // Process messages from client
             String inputLine;
@@ -50,6 +52,8 @@ public class ServerThread extends Thread {
     }
     
     private void processMessage(String message) {
+        System.out.println("Received message from " + username + ": " + message);
+        
         // Check if this is a command (starts with /)
         if (message.startsWith("/")) {
             String[] parts = message.substring(1).split("\\s+", 2);
@@ -67,9 +71,8 @@ public class ServerThread extends Thread {
         }
     }
     
-    // In the ServerThread class, modify the handleCommand method to add game-specific commands
     private void handleCommand(String command, String[] args) {
-        System.out.println("DEBUG: Handling command: " + command); // Add debug logging
+        System.out.println("DEBUG: Handling command: " + command + " from user: " + username);
         
         switch (command.toLowerCase()) {
             case "username" -> changeUsername(args);
@@ -78,6 +81,7 @@ public class ServerThread extends Thread {
             case "rooms" -> listRooms();
             case "help" -> sendHelpMenu();
             case "quit" -> disconnect();
+            case "leave" -> leaveRoom();
             case "starthangman" -> {
                 if (currentRoom != null) {
                     System.out.println("DEBUG: Forwarding starthangman command to room");
@@ -93,11 +97,18 @@ public class ServerThread extends Thread {
                 }
             }
             case "guess" -> {
-                if (currentRoom != null) {
-                    System.out.println("DEBUG: Forwarding guess command to room");
+                if (currentRoom != null && currentRoom instanceof GameRoom) {
+                    System.out.println("DEBUG: Forwarding guess command to room: " + args[0]);
                     currentRoom.handleCommand(this, command, args);
                 } else {
                     sendMessage("SERVER", "You must join a game room first.");
+                }
+            }
+            case "ready", "spectate", "away", "play", "score" -> {
+                if (currentRoom != null && currentRoom instanceof GameRoom) {
+                    currentRoom.handleCommand(this, command, args);
+                } else {
+                    sendMessage("SERVER", "This command only works in game rooms.");
                 }
             }
             default -> {
@@ -110,6 +121,18 @@ public class ServerThread extends Thread {
         }
     }
     
+    private void leaveRoom() {
+        if (currentRoom != null) {
+            Room oldRoom = currentRoom;
+            currentRoom.removeClient(this);
+            
+            // Join lobby
+            server.getLobby().addClient(this);
+            sendMessage("SERVER", "You have left " + oldRoom.getRoomName() + " and returned to the lobby.");
+        } else {
+            sendMessage("SERVER", "You are not in a room.");
+        }
+    }
     
     private void changeUsername(String[] args) {
         if (args.length < 1) {
@@ -129,10 +152,11 @@ public class ServerThread extends Thread {
         }
         
         // Update username
-        
+        String oldUsername = username;
         username = newUsername;
         
         sendMessage("SERVER", "You are now known as " + username);
+        System.out.println("Username changed: " + oldUsername + " -> " + username);
     }
     
     private void joinRoom(String[] args) {
@@ -202,6 +226,7 @@ public class ServerThread extends Thread {
         help.append("/join [room] - Join a room\n");
         help.append("/create [room] - Create a new game room\n");
         help.append("/rooms - List available rooms\n");
+        help.append("/leave - Leave current room and return to lobby\n");
         help.append("/quit - Disconnect from server\n");
         help.append("/help - Show this help menu\n\n");
         
